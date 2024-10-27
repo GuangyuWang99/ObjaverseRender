@@ -248,10 +248,12 @@ if __name__ == "__main__":
     res_normal_path = os.path.join(root_folder, scene_name, 'buffers/normals')
     res_depth_path = os.path.join(root_folder, scene_name, 'buffers/depths')
     res_pose_path = os.path.join(root_folder, scene_name, 'buffers/sparse')
+    res_alpha_path = os.path.join(root_folder, scene_name, 'buffers/masks')
     os.makedirs(vis_normal_path, exist_ok=True)
     os.makedirs(res_normal_path, exist_ok=True)
     os.makedirs(res_depth_path, exist_ok=True)
     os.makedirs(res_pose_path, exist_ok=True)
+    os.makedirs(res_alpha_path, exist_ok=True)
     
     projection_matrix = torch.tensor(
         [[2*focal/width,   0, (width - 2*cx) / width, 0],
@@ -363,7 +365,7 @@ if __name__ == "__main__":
         v_pos_clip = torch.matmul(torch.nn.functional.pad(verts, pad=(0,1), mode='constant', value=1.0), torch.transpose(mvps, 1, 2))
         rast, rast_db = dr.rasterize(glctx, v_pos_clip, faces, (height, width))  # [N_v, H, W, 4]
         inlier_mask = rast[..., 3] > 0
-        alpha = (inlier_mask[0].cpu().numpy() * 255.).astype('uint8')
+        # alpha = (inlier_mask[0].cpu().numpy() * 255.).astype('uint8')
         frg_normal, _ = dr.interpolate(normals, rast, faces)        # [N_v, H, W, 3]
         frg_normal = torch.nn.functional.normalize(frg_normal, p=2, dim=-1, eps=1e-8).contiguous()
         
@@ -377,11 +379,14 @@ if __name__ == "__main__":
         torch.save(sav_depth, os.path.join(res_depth_path, "{:05}.pt".format(i)))
         torch.save(frg_normal[0].cpu(), os.path.join(res_normal_path, "{:05}.pt".format(i)))
         
+        # cv2.imwrite(os.path.join(res_alpha_path, "{:05}.png".format(i)), alpha)
+        
         vis_n = (frg_normal[0].cpu().numpy() * 0.5 + 0.5) * 255.
         cv2.imwrite(os.path.join(vis_normal_path, "{:05}.jpg".format(i)), vis_n.astype('uint8'))
         
         if texture_path is not None and os.path.exists(texture_path):
             frg_uv, _ = dr.interpolate(uvs, rast, faces)
             frg_image = dr.texture(texture, frg_uv, mip=texture_mip, filter_mode='linear')
+            frg_image[~inlier_mask] = 0.0
             cv2.imwrite(os.path.join(res_rgb_path, "{:05}.jpg".format(i)), (frg_image[0] * 255.).cpu().numpy()[..., ::-1].astype('uint8'))
     
