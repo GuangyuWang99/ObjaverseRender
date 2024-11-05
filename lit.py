@@ -6,7 +6,7 @@ import random
 from typing import Tuple
 from mathutils import Vector
 
-def sample_point_on_sphere(radius: float) -> Tuple[float, float, float]:
+def sample_random_point_on_sphere(radius: float) -> Tuple[float, float, float]:
     theta = random.random() * 2 * math.pi
     phi = math.acos(2 * random.random() - 1)
     return (
@@ -14,6 +14,19 @@ def sample_point_on_sphere(radius: float) -> Tuple[float, float, float]:
         radius * math.sin(phi) * math.sin(theta),
         radius * math.cos(phi),
     )
+
+def sample_uniform_point_on_sphere(radius: float, num_horiz: int, num_verti: int):
+    rets = []
+    for j in range(num_verti):
+        phi = ((j+1) / num_verti) * math.pi
+        for i in range(num_horiz):
+            theta = (i / num_horiz) * math.pi * 2
+            rets.append((
+                radius * math.sin(phi) * math.cos(theta),
+                radius * math.sin(phi) * math.sin(theta),
+                radius * math.cos(phi),
+            ))
+    return rets
 
 def reset_scene() -> None:
     """Resets the scene to a clean state."""
@@ -123,7 +136,7 @@ def add_lighting(lit_strength=1.0) -> None:
     to_node = world_output_node
     world_node_tree.links.new(from_node.outputs["Background"], to_node.inputs["Surface"])
 
-def render_image(object_path, out_path, num_images=10, camera_dist=1.5, lit_strength=5.0) -> None:
+def render_image(object_path, out_path, num_horiz: int = 10, num_verti: int = 5, camera_dist: float = 1.5, lit_strength: float = 5.0) -> None:
     os.makedirs(out_path, exist_ok=True)
     reset_scene()
     load_object(object_path)
@@ -134,16 +147,10 @@ def render_image(object_path, out_path, num_images=10, camera_dist=1.5, lit_stre
     empty = bpy.data.objects.new("Empty", None)
     scene.collection.objects.link(empty)
     cam_constraint.target = empty
-    for i in range(num_images):
+    uniform_cam_points = sample_uniform_point_on_sphere(radius=camera_dist, num_horiz=num_horiz, num_verti=num_verti)
+    for i in range(num_horiz * num_verti):
         # set the camera position
-        theta = (i / num_images) * math.pi * 2
-        phi = math.radians(60)
-        point = (
-            camera_dist * math.sin(phi) * math.cos(theta),
-            camera_dist * math.sin(phi) * math.sin(theta),
-            camera_dist * math.cos(phi),
-        )
-        cam.location = point
+        cam.location = uniform_cam_points[i]
         # render the image
         render_path = os.path.join(out_path, f"{i:03d}.png")
         scene.render.filepath = render_path
@@ -158,8 +165,8 @@ if __name__ == "__main__":
     render.engine = "CYCLES"
     render.image_settings.file_format = "PNG"
     render.image_settings.color_mode = "RGBA"
-    render.resolution_x = 1024
-    render.resolution_y = 1024
+    render.resolution_x = 128
+    render.resolution_y = 128
     render.resolution_percentage = 100
 
     scene.cycles.device = "GPU"
@@ -178,7 +185,8 @@ if __name__ == "__main__":
     render_image(
         object_path=object_path,
         out_path="/media/womoer/Wdata/aRobotics/Relit/render",
-        num_images=10,
+        num_horiz=10,
+        num_verti=5,
         camera_dist=1.5,
         lit_strength=5.0,
     )
