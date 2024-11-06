@@ -3,8 +3,49 @@ import bpy
 import datetime
 import math
 import random
+import numpy as np
 from typing import Tuple
-from mathutils import Vector
+from mathutils import Vector, Matrix, Quaternion
+
+def get_3x4_RT_matrix_from_blender(cam: bpy.types.Object) -> Matrix:
+    """Returns the 3x4 RT matrix from the given camera.
+
+    Taken from Zero123, which in turn was taken from
+    https://github.com/panmari/stanford-shapenet-renderer/blob/master/render_blender.py
+
+    Args:
+        cam (bpy.types.Object): The camera object.
+
+    Returns:
+        Matrix: The 3x4 RT matrix from the given camera.
+    """
+    # Use matrix_world instead to account for all constraints
+    location, rotation = cam.matrix_world.decompose()[0:2]
+
+    R_bcam2cv = Matrix(
+        ((1, 0, 0),
+         (0, -1, 0),
+         (0, 0, -1))
+    )
+
+    R_world2bcam = rotation.to_matrix().transposed()
+
+    # Use location from matrix_world to account for constraints:
+    T_world2bcam = -1 * R_world2bcam @ location
+
+    R_world2bcam = R_bcam2cv @ R_world2bcam
+    T_world2bcam = R_bcam2cv @ T_world2bcam
+
+    # # put into 3x4 matrix
+    RT = Matrix(
+        (
+            R_world2bcam[0][:] + (T_world2bcam[0],),
+            R_world2bcam[1][:] + (T_world2bcam[1],),
+            R_world2bcam[2][:] + (T_world2bcam[2],),
+        )
+    )
+
+    return RT
 
 def sample_random_point_on_sphere(radius: float) -> Tuple[float, float, float]:
     theta = random.random() * 2 * math.pi
@@ -100,9 +141,12 @@ def setup_camera():
     cam.location = (0, 1.2, 0)
     cam.data.lens = 35
     cam.data.sensor_width = 32
+    cam.data.sensor_height = 32
     cam_constraint = cam.constraints.new(type="TRACK_TO")
     cam_constraint.track_axis = "TRACK_NEGATIVE_Z"
     cam_constraint.up_axis = "UP_Y"
+    # cam.data.lens_unit = 'FOV'
+    # cam.data.angle = math.radians(39.6)
     return cam, cam_constraint
 
 def add_lighting(lit_strength=1.0) -> None:
@@ -137,7 +181,11 @@ def add_lighting(lit_strength=1.0) -> None:
     world_node_tree.links.new(from_node.outputs["Background"], to_node.inputs["Surface"])
 
 def render_image(object_path, out_path, num_horiz: int = 10, num_verti: int = 5, camera_dist: float = 1.5, lit_strength: float = 5.0) -> None:
-    os.makedirs(out_path, exist_ok=True)
+    res_rgb_path = os.path.join(out_path, "images")
+    res_pos_path = os.path.join(out_path, "poses")
+    os.makedirs(res_rgb_path, exist_ok=True)
+    os.makedirs(res_pos_path, exist_ok=True)
+
     reset_scene()
     load_object(object_path)
     normalize_scene()
@@ -151,11 +199,21 @@ def render_image(object_path, out_path, num_horiz: int = 10, num_verti: int = 5,
     for i in range(num_horiz * num_verti):
         # set the camera position
         cam.location = uniform_cam_points[i]
+
+        direction = -cam.location
+        rot_quat = direction.to_track_quat("-Z", "Y")
+        cam.rotation_euler = rot_quat.to_euler()
+        # save camera RT matrix
+        rt_matrix = get_3x4_RT_matrix_from_blender(cam)
+        rt_matrix_path = os.path.join(res_pos_path, f"{i:03d}.npy")
+        np.save(rt_matrix_path, rt_matrix)
+
         # render the image
-        render_path = os.path.join(out_path, f"{i:03d}.png")
+        render_path = os.path.join(res_rgb_path, f"{i:03d}.png")
         scene.render.filepath = render_path
         bpy.ops.render.render(write_still=True)
 
+    bpy.ops.export_scene.obj(filepath=os.path.join(out_path, "1.obj"))
 
 if __name__ == "__main__":
     context = bpy.context
@@ -165,8 +223,8 @@ if __name__ == "__main__":
     render.engine = "CYCLES"
     render.image_settings.file_format = "PNG"
     render.image_settings.color_mode = "RGBA"
-    render.resolution_x = 128
-    render.resolution_y = 128
+    render.resolution_x = 512
+    render.resolution_y = 512
     render.resolution_percentage = 100
 
     scene.cycles.device = "GPU"
@@ -184,9 +242,9 @@ if __name__ == "__main__":
     object_path = "/media/womoer/Wdata/aRobotics/robot_model/mmk2/avg_link/avg_link.obj"
     render_image(
         object_path=object_path,
-        out_path="/media/womoer/Wdata/aRobotics/Relit/render",
+        out_path="/media/womoer/Wdata/aRobotics/Relit/blender_output",
         num_horiz=10,
-        num_verti=5,
+        num_verti=3,
         camera_dist=1.5,
         lit_strength=5.0,
     )
