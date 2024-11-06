@@ -44,7 +44,6 @@ def get_3x4_RT_matrix_from_blender(cam: bpy.types.Object) -> Matrix:
             R_world2bcam[2][:] + (T_world2bcam[2],),
         )
     )
-
     return RT
 
 def sample_random_point_on_sphere(radius: float) -> Tuple[float, float, float]:
@@ -61,7 +60,7 @@ def sample_uniform_point_on_sphere(radius: float, num_horiz: int, num_verti: int
     for j in range(num_verti):
         phi = ((j+1) / num_verti) * math.pi
         for i in range(num_horiz):
-            theta = (i / num_horiz) * math.pi * 2
+            theta = ((i+1) / num_horiz) * math.pi * 2
             rets.append((
                 radius * math.sin(phi) * math.cos(theta),
                 radius * math.sin(phi) * math.sin(theta),
@@ -145,8 +144,6 @@ def setup_camera():
     cam_constraint = cam.constraints.new(type="TRACK_TO")
     cam_constraint.track_axis = "TRACK_NEGATIVE_Z"
     cam_constraint.up_axis = "UP_Y"
-    # cam.data.lens_unit = 'FOV'
-    # cam.data.angle = math.radians(39.6)
     return cam, cam_constraint
 
 def add_lighting(lit_strength=1.0) -> None:
@@ -203,15 +200,16 @@ def render_image(object_path, out_path, num_horiz: int = 10, num_verti: int = 5,
         direction = -cam.location
         rot_quat = direction.to_track_quat("-Z", "Y")
         cam.rotation_euler = rot_quat.to_euler()
-        # save camera RT matrix
-        rt_matrix = get_3x4_RT_matrix_from_blender(cam)
-        rt_matrix_path = os.path.join(res_pos_path, f"{i:03d}.npy")
-        np.save(rt_matrix_path, rt_matrix)
 
         # render the image
         render_path = os.path.join(res_rgb_path, f"{i:03d}.png")
         scene.render.filepath = render_path
         bpy.ops.render.render(write_still=True)
+
+        # save camera RT matrix
+        rt_matrix = get_3x4_RT_matrix_from_blender(cam)
+        rt_matrix_path = os.path.join(res_pos_path, f"{i:03d}.npy")
+        np.save(rt_matrix_path, rt_matrix)
 
     bpy.ops.export_scene.obj(filepath=os.path.join(out_path, "1.obj"))
 
