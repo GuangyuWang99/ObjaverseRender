@@ -4,6 +4,7 @@ import datetime
 import math
 import random
 import numpy as np
+import argparse
 from typing import Tuple
 from mathutils import Vector, Matrix, Quaternion
 
@@ -156,18 +157,18 @@ def normalize_scene():
         obj.matrix_world.translation += offset
     bpy.ops.object.select_all(action="DESELECT")
 
-def setup_camera():
+def setup_camera(args):
     cam = scene.objects["Camera"]
     cam.location = (0, 1.2, 0)
-    cam.data.lens = 35
-    cam.data.sensor_width = 32
-    cam.data.sensor_height = 32
+    cam.data.lens = args.lens
+    cam.data.sensor_width = args.sensor_size
+    cam.data.sensor_height = args.sensor_size
     cam_constraint = cam.constraints.new(type="TRACK_TO")
     cam_constraint.track_axis = "TRACK_NEGATIVE_Z"
     cam_constraint.up_axis = "UP_Y"
     return cam, cam_constraint
 
-def add_lighting(lit_strength=1.0) -> None:
+def add_lighting(lit_path, lit_strength=1.0) -> None:
     # delete the default light
     if "Light" in bpy.data.objects.keys():
         bpy.data.objects["Light"].select_set(True)
@@ -175,7 +176,6 @@ def add_lighting(lit_strength=1.0) -> None:
 
     location_x = 0
 
-    lit_path = "/media/womoer/Wdata/aRobotics/Relit/1.exr"
     lit_obj = bpy.data.images.load(lit_path)
 
     environment_texture_node = world_node_tree.nodes.new(type="ShaderNodeTexEnvironment")
@@ -198,16 +198,16 @@ def add_lighting(lit_strength=1.0) -> None:
     to_node = world_output_node
     world_node_tree.links.new(from_node.outputs["Background"], to_node.inputs["Surface"])
 
-def render_image(object_path, out_path, num_horiz: int = 10, num_verti: int = 5, camera_dist: float = 1.5, lit_strength: float = 5.0) -> None:
-    res_rgb_path = os.path.join(out_path, "images")
-    res_pos_path = os.path.join(out_path, "poses")
-    res_depth_path = os.path.join(out_path, "depths")
+def render_image(args) -> None:
+    res_rgb_path = os.path.join(args.out_path, "images")
+    res_pos_path = os.path.join(args.out_path, "poses")
+    res_depth_path = os.path.join(args.out_path, "depths")
     os.makedirs(res_rgb_path, exist_ok=True)
     os.makedirs(res_pos_path, exist_ok=True)
     os.makedirs(res_depth_path, exist_ok=True)
 
     reset_scene()
-    load_object(object_path)
+    load_object(args.object_path)
     normalize_scene()
 
     # Create input render layer node
@@ -220,14 +220,14 @@ def render_image(object_path, out_path, num_horiz: int = 10, num_verti: int = 5,
     depth_file_output.format.file_format = "OPEN_EXR"
     bpy.context.scene.node_tree.links.new(render_layers.outputs['Depth'], depth_file_output.inputs[0])
 
-    add_lighting(lit_strength=lit_strength)
-    cam, cam_constraint = setup_camera()
+    add_lighting(lit_path=args.lit_path, lit_strength=args.lit_strength)
+    cam, cam_constraint = setup_camera(args)
     # create an empty object to track
     empty = bpy.data.objects.new("Empty", None)
     scene.collection.objects.link(empty)
     cam_constraint.target = empty
-    uniform_cam_points = sample_uniform_point_on_sphere(radius=camera_dist, num_horiz=num_horiz, num_verti=num_verti)
-    for i in range(num_horiz * num_verti):
+    uniform_cam_points = sample_uniform_point_on_sphere(radius=args.camera_dist, num_horiz=args.num_horiz, num_verti=args.num_verti)
+    for i in range(args.num_horiz * args.num_verti):
         # set the camera position
         cam.location = uniform_cam_points[i]
 
@@ -246,9 +246,34 @@ def render_image(object_path, out_path, num_horiz: int = 10, num_verti: int = 5,
         rt_matrix_path = os.path.join(res_pos_path, f"{i:03d}.npy")
         np.save(rt_matrix_path, rt_matrix)
 
-    bpy.ops.export_scene.obj(filepath=os.path.join(out_path, "1.obj"))
+    bpy.ops.export_scene.obj(filepath=os.path.join(args.out_path, "1.obj"))
+
+def create_argparser():
+    parser = argparse.ArgumentParser()
+    # I/O
+    parser.add_argument("--lit_path", type=str, default="/media/womoer/Wdata/aRobotics/Relit/1.exr",
+                        help='directory that contains the hdr environment map')
+    parser.add_argument("--object_path", type=str,
+                        # default="/media/womoer/Wdata/aRobotics/robot_model/mmk2/avg_link/avg_link.obj",
+                        default="/media/womoer/Wdata/data/AObjaverse/data/hf-objaverse-v1/glbs/000-075/9669365a5dfd43bfaad90b71f302fedd.glb",
+                        help='directory that contains the model, in formats of .obj or .glb or .fbx')
+    parser.add_argument("--out_path", type=str, default="/media/womoer/Wdata/aRobotics/Relit/blender_output/1",
+                        help='directory that saves the results')
+    # environment HDR map
+    parser.add_argument("--lit_strength", type=float, default=5.0, help="Strength of the environment lighting")
+    # camera sampling
+    parser.add_argument("--camera_dist", type=float, default=1.5, help="radius of the sphere to locate cameras")
+    parser.add_argument("--num_horiz", type=int, default=10, help="num of cameras uniformly spanning along the xy-plane")
+    parser.add_argument("--num_verti", type=int, default=3, help="num of cameras uniformly spanning along the z-plane")
+    # intrinsics
+    parser.add_argument("--resolution", type=int, default=512, help="resolution of the rendering")
+    parser.add_argument("--lens", type=int, default=40, help="focal length in mm")
+    parser.add_argument("--sensor_size", type=int, default=32, help="focal length in mm")
+    return parser
 
 if __name__ == "__main__":
+    args = create_argparser().parse_args()
+
     context = bpy.context
     scene = context.scene
     render = scene.render
@@ -256,8 +281,8 @@ if __name__ == "__main__":
     render.engine = "CYCLES"
     render.image_settings.file_format = "PNG"
     render.image_settings.color_mode = "RGBA"
-    render.resolution_x = 512
-    render.resolution_y = 512
+    render.resolution_x = args.resolution
+    render.resolution_y = args.resolution
     render.resolution_percentage = 100
 
     scene.use_nodes = True
@@ -278,12 +303,5 @@ if __name__ == "__main__":
 
     world_node_tree = bpy.context.scene.world.node_tree
     world_node_tree.nodes.clear()
-    object_path = "/media/womoer/Wdata/aRobotics/robot_model/mmk2/avg_link/avg_link.obj"
-    render_image(
-        object_path=object_path,
-        out_path="/media/womoer/Wdata/aRobotics/Relit/blender_output",
-        num_horiz=10,
-        num_verti=3,
-        camera_dist=1.5,
-        lit_strength=5.0,
-    )
+    render_image(args)
+    # exit(0)
