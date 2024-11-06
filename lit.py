@@ -36,7 +36,7 @@ def get_3x4_RT_matrix_from_blender(cam: bpy.types.Object) -> Matrix:
     R_world2bcam = R_bcam2cv @ R_world2bcam
     T_world2bcam = R_bcam2cv @ T_world2bcam
 
-    # # put into 3x4 matrix
+    # put into 3x4 matrix
     RT = Matrix(
         (
             R_world2bcam[0][:] + (T_world2bcam[0],),
@@ -44,6 +44,27 @@ def get_3x4_RT_matrix_from_blender(cam: bpy.types.Object) -> Matrix:
             R_world2bcam[2][:] + (T_world2bcam[2],),
         )
     )
+
+    # rotate around x-axis by 90-degree
+    rotx90 = Matrix(
+        (
+            (1, 0, 0, 0),
+            (0, 0, -1, 0),
+            (0, 1, 0, 0),
+            (0, 0, 0, 1)
+        )
+    )
+    RT = RT @ rotx90
+
+    # # colmap to open-gl
+    # matcv2gl = Matrix(
+    #     (
+    #         (1, 0, 0),
+    #         (0, -1, 0),
+    #         (0, 0, -1)
+    #     )
+    # )
+    # RT = matcv2gl @ RT
     return RT
 
 def sample_random_point_on_sphere(radius: float) -> Tuple[float, float, float]:
@@ -221,8 +242,8 @@ if __name__ == "__main__":
     render.engine = "CYCLES"
     render.image_settings.file_format = "PNG"
     render.image_settings.color_mode = "RGBA"
-    render.resolution_x = 512
-    render.resolution_y = 512
+    render.resolution_x = 1024
+    render.resolution_y = 1024
     render.resolution_percentage = 100
 
     scene.cycles.device = "GPU"
