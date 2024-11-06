@@ -201,12 +201,25 @@ def add_lighting(lit_strength=1.0) -> None:
 def render_image(object_path, out_path, num_horiz: int = 10, num_verti: int = 5, camera_dist: float = 1.5, lit_strength: float = 5.0) -> None:
     res_rgb_path = os.path.join(out_path, "images")
     res_pos_path = os.path.join(out_path, "poses")
+    res_depth_path = os.path.join(out_path, "depths")
     os.makedirs(res_rgb_path, exist_ok=True)
     os.makedirs(res_pos_path, exist_ok=True)
+    os.makedirs(res_depth_path, exist_ok=True)
 
     reset_scene()
     load_object(object_path)
     normalize_scene()
+
+    # Create input render layer node
+    render_layers = bpy.context.scene.node_tree.nodes.new('CompositorNodeRLayers')
+    # Create depth output nodes
+    depth_file_output = bpy.context.scene.node_tree.nodes.new(type="CompositorNodeOutputFile")
+    depth_file_output.label = 'Depth Output'
+    depth_file_output.base_path = ''
+    depth_file_output.file_slots[0].use_node_format = True
+    depth_file_output.format.file_format = "OPEN_EXR"
+    bpy.context.scene.node_tree.links.new(render_layers.outputs['Depth'], depth_file_output.inputs[0])
+
     add_lighting(lit_strength=lit_strength)
     cam, cam_constraint = setup_camera()
     # create an empty object to track
@@ -223,8 +236,9 @@ def render_image(object_path, out_path, num_horiz: int = 10, num_verti: int = 5,
         cam.rotation_euler = rot_quat.to_euler()
 
         # render the image
-        render_path = os.path.join(res_rgb_path, f"{i:03d}.png")
+        render_path = os.path.join(res_rgb_path, f"{i:03d}")
         scene.render.filepath = render_path
+        depth_file_output.file_slots[0].path = os.path.join(res_depth_path, f"{i:03d}")
         bpy.ops.render.render(write_still=True)
 
         # save camera RT matrix
@@ -242,10 +256,16 @@ if __name__ == "__main__":
     render.engine = "CYCLES"
     render.image_settings.file_format = "PNG"
     render.image_settings.color_mode = "RGBA"
-    render.resolution_x = 1024
-    render.resolution_y = 1024
+    render.resolution_x = 512
+    render.resolution_y = 512
     render.resolution_percentage = 100
 
+    scene.use_nodes = True
+    view_layer = scene.view_layers[0]
+    view_layer.use_pass_z = True
+    view_layer.use_pass_normal = True
+    view_layer.use_pass_diffuse_color = True
+    view_layer.use_pass_object_index = True
     scene.cycles.device = "GPU"
     scene.cycles.samples = 32
     scene.cycles.diffuse_bounces = 1
